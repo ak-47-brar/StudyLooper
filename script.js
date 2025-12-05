@@ -1,20 +1,240 @@
+// Authentication State
+let currentUser = null;
+
 // Timer variables
 let timerInterval = null;
 let seconds = 0;
 let isRunning = false;
 let startTime = null;
 
-// Load sessions from localStorage
+// Initialize app
+window.onload = function() {
+    checkAuthStatus();
+};
+
+// ========== AUTHENTICATION FUNCTIONS ==========
+
+function generateUniqueId() {
+    const timestamp = Date.now().toString(36);
+    const randomStr = Math.random().toString(36).substring(2, 7);
+    return `SL-${timestamp}-${randomStr}`.toUpperCase();
+}
+
+function getUsers() {
+    const users = localStorage.getItem('studyLooperUsers');
+    return users ? JSON.parse(users) : {};
+}
+
+function saveUsers(users) {
+    localStorage.setItem('studyLooperUsers', JSON.stringify(users));
+}
+
+function showLogin() {
+    document.getElementById('loginForm').classList.remove('hidden');
+    document.getElementById('signupForm').classList.add('hidden');
+    clearMessages();
+}
+
+function showSignup() {
+    document.getElementById('loginForm').classList.add('hidden');
+    document.getElementById('signupForm').classList.remove('hidden');
+    clearMessages();
+}
+
+function clearMessages() {
+    document.getElementById('loginError').style.display = 'none';
+    document.getElementById('signupError').style.display = 'none';
+    document.getElementById('signupSuccess').style.display = 'none';
+}
+
+function showError(elementId, message) {
+    const elem = document.getElementById(elementId);
+    elem.textContent = message;
+    elem.style.display = 'block';
+}
+
+function showSuccess(elementId, message) {
+    const elem = document.getElementById(elementId);
+    elem.textContent = message;
+    elem.style.display = 'block';
+}
+
+function signup() {
+    clearMessages();
+    
+    const name = document.getElementById('signupName').value.trim();
+    const email = document.getElementById('signupEmail').value.trim();
+    const password = document.getElementById('signupPassword').value;
+    const confirmPassword = document.getElementById('signupConfirmPassword').value;
+    
+    // Validation
+    if (!name) {
+        showError('signupError', 'Please enter your name');
+        return;
+    }
+    
+    if (name.length < 2) {
+        showError('signupError', 'Name must be at least 2 characters');
+        return;
+    }
+    
+    if (!password) {
+        showError('signupError', 'Please enter a password');
+        return;
+    }
+    
+    if (password.length < 6) {
+        showError('signupError', 'Password must be at least 6 characters');
+        return;
+    }
+    
+    if (password !== confirmPassword) {
+        showError('signupError', 'Passwords do not match');
+        return;
+    }
+    
+    // Generate unique ID
+    const uniqueId = generateUniqueId();
+    
+    // Create user object
+    const users = getUsers();
+    users[uniqueId] = {
+        id: uniqueId,
+        name: name,
+        email: email || 'Not provided',
+        password: password, // In production, this should be hashed
+        createdAt: new Date().toISOString(),
+        sessions: []
+    };
+    
+    saveUsers(users);
+    
+    // Show success with unique ID
+    const successMsg = `Account created successfully! Your Unique ID is: ${uniqueId}. Please save this ID for login.`;
+    showSuccess('signupSuccess', successMsg);
+    
+    // Clear form
+    document.getElementById('signupName').value = '';
+    document.getElementById('signupEmail').value = '';
+    document.getElementById('signupPassword').value = '';
+    document.getElementById('signupConfirmPassword').value = '';
+    
+    // Auto-fill login form
+    setTimeout(() => {
+        document.getElementById('loginId').value = uniqueId;
+        showLogin();
+    }, 3000);
+}
+
+function login() {
+    clearMessages();
+    
+    const userId = document.getElementById('loginId').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    
+    if (!userId || !password) {
+        showError('loginError', 'Please enter both ID and password');
+        return;
+    }
+    
+    const users = getUsers();
+    const user = users[userId];
+    
+    if (!user) {
+        showError('loginError', 'Invalid Unique ID or password');
+        return;
+    }
+    
+    if (user.password !== password) {
+        showError('loginError', 'Invalid Unique ID or password');
+        return;
+    }
+    
+    // Login successful
+    currentUser = user;
+    localStorage.setItem('currentUserId', userId);
+    
+    showMainApp();
+}
+
+function checkAuthStatus() {
+    const userId = localStorage.getItem('currentUserId');
+    
+    if (userId) {
+        const users = getUsers();
+        const user = users[userId];
+        
+        if (user) {
+            currentUser = user;
+            showMainApp();
+            return;
+        }
+    }
+    
+    showAuthScreen();
+}
+
+function showAuthScreen() {
+    document.getElementById('authScreen').classList.remove('hidden');
+    document.getElementById('mainApp').classList.add('hidden');
+}
+
+function showMainApp() {
+    document.getElementById('authScreen').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    
+    // Update UI with user info
+    const initials = currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    document.getElementById('userAvatar').textContent = initials;
+    document.getElementById('userName').textContent = currentUser.name;
+    document.getElementById('userIdDisplay').textContent = currentUser.id;
+    document.getElementById('profileAvatar').textContent = initials;
+    document.getElementById('profileName').textContent = currentUser.name;
+    document.getElementById('profileId').textContent = currentUser.id;
+    document.getElementById('profileEmail').textContent = currentUser.email;
+    document.getElementById('profileJoined').textContent = new Date(currentUser.createdAt).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+    
+    // Load user data
+    updateDisplay();
+    updateAnalytics();
+    updateHistory();
+}
+
+function logout() {
+    if (confirm('Are you sure you want to logout?')) {
+        currentUser = null;
+        localStorage.removeItem('currentUserId');
+        resetTimer();
+        showAuthScreen();
+        
+        // Clear forms
+        document.getElementById('loginId').value = '';
+        document.getElementById('loginPassword').value = '';
+    }
+}
+
+// ========== DATA MANAGEMENT FUNCTIONS ==========
+
 function getSessions() {
-    const sessions = localStorage.getItem('studySessions');
-    return sessions ? JSON.parse(sessions) : [];
+    if (!currentUser) return [];
+    const users = getUsers();
+    return users[currentUser.id]?.sessions || [];
 }
 
 function saveSessions(sessions) {
-    localStorage.setItem('studySessions', JSON.stringify(sessions));
+    if (!currentUser) return;
+    const users = getUsers();
+    users[currentUser.id].sessions = sessions;
+    saveUsers(users);
+    currentUser.sessions = sessions;
 }
 
-// Format time
+// ========== TIMER FUNCTIONS ==========
+
 function formatTime(totalSeconds) {
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
@@ -31,7 +251,6 @@ function formatDuration(totalSeconds) {
     return `${minutes}m`;
 }
 
-// Timer functions
 function updateDisplay() {
     document.getElementById('timerDisplay').textContent = formatTime(seconds);
 }
@@ -78,7 +297,6 @@ function stopTimer() {
         clearInterval(timerInterval);
         isRunning = false;
         
-        // Save session
         const sessions = getSessions();
         const sessionName = document.getElementById('sessionName').value || 'Study Session';
         
@@ -106,7 +324,6 @@ function stopTimer() {
         updateAnalytics();
         updateHistory();
         
-        // Show success message
         alert(`✅ Session saved!\nDuration: ${formatDuration(newSession.duration)}`);
     }
 }
@@ -125,7 +342,8 @@ function resetTimer() {
     document.getElementById('sessionName').value = '';
 }
 
-// Tab switching
+// ========== TAB MANAGEMENT ==========
+
 function showTab(tabName) {
     const tabs = document.querySelectorAll('.tab-content');
     const buttons = document.querySelectorAll('.tab-button');
@@ -143,38 +361,30 @@ function showTab(tabName) {
     }
 }
 
-// Analytics
+// ========== ANALYTICS ==========
+
 function updateAnalytics() {
     const sessions = getSessions();
     
-    // Calculate total time
     const totalSeconds = sessions.reduce((sum, session) => sum + session.duration, 0);
     const totalHours = (totalSeconds / 3600).toFixed(1);
-    
-    // Total sessions
     const totalSessionsCount = sessions.length;
-    
-    // Average session
     const avgSeconds = totalSessionsCount > 0 ? totalSeconds / totalSessionsCount : 0;
     const avgMinutes = Math.round(avgSeconds / 60);
     
-    // Today's time
     const today = new Date().toDateString();
     const todaySessions = sessions.filter(s => new Date(s.date).toDateString() === today);
     const todaySeconds = todaySessions.reduce((sum, session) => sum + session.duration, 0);
     const todayHours = (todaySeconds / 3600).toFixed(1);
     
-    // Streak
     const streak = calculateStreak(sessions);
     
-    // Update display
     document.getElementById('totalTime').textContent = `${totalHours}h`;
     document.getElementById('totalSessions').textContent = totalSessionsCount;
     document.getElementById('avgSession').textContent = `${avgMinutes}m`;
     document.getElementById('todayTime').textContent = `${todayHours}h`;
     document.getElementById('streakDays').textContent = streak;
     
-    // Update charts
     updateWeekChart(sessions);
     updatePieChart(sessions);
 }
@@ -210,7 +420,6 @@ function updateWeekChart(sessions) {
     const canvas = document.getElementById('weekChart');
     const ctx = canvas.getContext('2d');
     
-    // Get last 7 days
     const labels = [];
     const data = [];
     
@@ -270,7 +479,6 @@ function updatePieChart(sessions) {
     const canvas = document.getElementById('pieChart');
     const ctx = canvas.getContext('2d');
     
-    // Group by session name
     const grouped = {};
     sessions.forEach(session => {
         const name = session.name;
@@ -329,7 +537,8 @@ function updatePieChart(sessions) {
     });
 }
 
-// History
+// ========== HISTORY ==========
+
 function updateHistory() {
     const sessions = getSessions();
     const listElement = document.getElementById('sessionsList');
@@ -339,7 +548,6 @@ function updateHistory() {
         return;
     }
     
-    // Sort by date (newest first)
     sessions.sort((a, b) => new Date(b.date) - new Date(a.date));
     
     listElement.innerHTML = sessions.map(session => `
@@ -362,8 +570,3 @@ function deleteSession(id) {
         updateAnalytics();
     }
 }
-
-// Initialize
-updateDisplay();
-updateAnalytics();
-updateHistory();
